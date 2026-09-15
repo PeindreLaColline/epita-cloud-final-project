@@ -47,8 +47,11 @@ jobs:
         working-directory: ${{ env.TF_DIR }}
         run: |
           echo "EC2_IP=$(terraform output -raw public_ip)" >> $GITHUB_ENV
-          terraform output -raw ec2_private_key > ../key.pem
-          chmod 600 ../key.pem
+          {
+            echo "EC2_KEY<<EOF_KEY"
+            terraform output -raw ec2_private_key
+            echo "EOF_KEY"
+          } >> $GITHUB_ENV
 
       - name: Wait for SSH
         run: |
@@ -69,7 +72,7 @@ jobs:
         with:
           host: ${{ env.EC2_IP }}
           username: ec2-user
-          key_path: key.pem
+          key: ${{ env.EC2_KEY }}
           script: |
             echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
             docker pull ${{ env.IMAGE_NAME }}:latest
