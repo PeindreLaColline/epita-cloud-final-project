@@ -1,0 +1,76 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: eu-west-3
+      AWS_ROLE_ARN: arn:aws:iam::363191779144:role/epita-cloud-dev
+      TF_DIR: infrastructure
+      APP_DIR: epita-cloud
+      IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/epita-cloud-backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init & Apply
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          terraform init -input=false
+          terraform apply -auto-approve
+
+      - name: Get EC2 IP and SSH key
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          echo "EC2_IP=$(terraform output -raw public_ip)" >> $GITHUB_ENV
+          terraform output -raw ec2_private_key > ../key.pem
+          chmod 600 ../key.pem
+
+      - name: Wait for SSH
+        run: |
+          for i in {1..20}; do
+            nc -z -w5 $EC2_IP 22 && echo "SSH ready" && break
+            echo "waiting for ssh..."
+            sleep 10
+          done
+
+      - name: Build and push Docker image
+        run: |
+          docker build -t $IMAGE_NAME:latest ./$APP_DIR
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+          docker push $IMAGE_NAME:latest
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ env.EC2_IP }}
+          username: ec2-user
+          key_path: key.pem
+          script: |
+            docker pull ${{ env.IMAGE_NAME }}:latest
+            docker stop epita-cloud || true
+            docker rm epita-cloud || true
+            docker run -d \
+              --name epita-cloud \
+              -p 8080:8080 \
+              -e AWS_REGION=${{ env.AWS_REGION }} \
+              -e JWT_SECRET="${{ secrets.JWT_SECRET }}" \
+              ${{ env.IMAGE_NAME }}:latest
