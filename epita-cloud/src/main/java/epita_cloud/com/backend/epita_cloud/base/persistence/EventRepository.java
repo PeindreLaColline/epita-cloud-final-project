@@ -24,6 +24,7 @@ public class EventRepository {
     public void save(Event event) {
         Map<String, AttributeValue> item = new HashMap<>();
         item.put("event_id", AttributeValue.builder().s(event.getEventId()).build());
+        item.put("room_id", AttributeValue.builder().s(event.getRoomId()).build());
         item.put("building", AttributeValue.builder().s(event.getBuilding()).build());
         item.put("room", AttributeValue.builder().s(event.getRoom()).build());
         item.put("event_type", AttributeValue.builder().s(event.getEventType()).build());
@@ -55,6 +56,7 @@ public class EventRepository {
     private Event toEvent(Map<String, AttributeValue> item) {
         return Event.builder()
                 .eventId(item.get("event_id").s())
+                .roomId(item.containsKey("room_id") ? item.get("room_id").s() : null)
                 .building(item.get("building").s())
                 .room(item.get("room").s())
                 .eventType(item.get("event_type").s())

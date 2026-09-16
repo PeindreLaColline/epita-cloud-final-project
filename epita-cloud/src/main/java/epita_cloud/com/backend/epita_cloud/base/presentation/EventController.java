@@ -1,7 +1,9 @@
 package epita_cloud.com.backend.epita_cloud.base.presentation;
 
 import epita_cloud.com.backend.epita_cloud.base.business.EventUseCase;
+import epita_cloud.com.backend.epita_cloud.base.business.RoomUseCase;
 import epita_cloud.com.backend.epita_cloud.base.business.dto.AddEventReq;
+import epita_cloud.com.backend.epita_cloud.base.business.dto.CampusOccupancyResp;
 import epita_cloud.com.backend.epita_cloud.base.business.dto.EventStatsResp;
 import epita_cloud.com.backend.epita_cloud.entity.Event;
 import io.swagger.v3.oas.annotations.Operation;
@@ -16,6 +18,7 @@ import java.util.List;
 public class EventController {
 
     private final EventUseCase eventUseCase;
+    private final RoomUseCase roomUseCase;
 
     @Operation(
             summary = "add Event",
@@ -45,5 +48,14 @@ public class EventController {
     @GetMapping("/stats")
     public EventStatsResp getStatistics() {
         return eventUseCase.getStatistics();
+    }
+
+    @Operation(
+            summary = "get campus occupancy",
+            description = "Aggregates the current total occupancy per building across campus"
+    )
+    @GetMapping("/campus-occupancy")
+    public List<CampusOccupancyResp> getCampusOccupancy() {
+        return roomUseCase.getCampusOccupancy();
     }
 }
