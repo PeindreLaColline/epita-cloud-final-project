@@ -24,6 +24,8 @@ dependencies {
 	implementation platform('software.amazon.awssdk:bom:2.40.0')
 	implementation 'software.amazon.awssdk:dynamodb'
 
+	implementation 'com.fasterxml.jackson.core:jackson-databind'
+
 	implementation 'org.springframework.security:spring-security-crypto:6.3.3'
 	implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
 	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
