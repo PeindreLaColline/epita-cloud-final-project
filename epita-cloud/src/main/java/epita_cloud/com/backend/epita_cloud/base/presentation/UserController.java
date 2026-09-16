@@ -3,6 +3,7 @@ package epita_cloud.com.backend.epita_cloud.base.presentation;
 import epita_cloud.com.backend.epita_cloud.base.business.UserUseCase;
 import epita_cloud.com.backend.epita_cloud.base.business.dto.LoginReq;
 import epita_cloud.com.backend.epita_cloud.base.business.dto.LoginResp;
+import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -19,6 +20,10 @@ public class UserController {
 
     private final UserUseCase userUseCase;
 
+    @Operation(
+            summary = "Login",
+            description = "Login for the users"
+    )
     @PostMapping("/login")
     public LoginResp login(@RequestBody LoginReq loginReq) {
         return userUseCase.login(loginReq);

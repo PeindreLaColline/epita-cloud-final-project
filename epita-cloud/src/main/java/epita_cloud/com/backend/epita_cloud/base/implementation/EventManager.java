@@ -6,21 +6,16 @@ import epita_cloud.com.backend.epita_cloud.base.persistence.EventRepository;
 import epita_cloud.com.backend.epita_cloud.entity.Event;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
-import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
-import software.amazon.awssdk.services.dynamodb.model.*;
 
 import java.time.Instant;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @RequiredArgsConstructor
 @Component
 public class EventManager {
 
-    private static final Set<String> ABNORMAL_SEVERITIES = Set.of("warning", "critical", "urgent");
+    private static final Set<String> ABNORMAL_SEVERITIES = Set.of("warning", "critical");
 
     private final EventRepository eventRepository;
 
@@ -41,12 +36,17 @@ public class EventManager {
     }
 
     public List<Event> getRecentEvents() {
-        return eventRepository.findAll();
+        return eventRepository.findAll().stream()
+                .sorted(Comparator.comparing(Event::getTimestamp).reversed())
+                .limit(10)
+                .toList();
     }
 
     public List<Event> getAbnormalEvents() {
         return eventRepository.findAll().stream()
-                .filter(event -> ABNORMAL_SEVERITIES.contains(event.getSeverity()))
+                .filter(event -> ABNORMAL_SEVERITIES.contains(event.getSeverity().toLowerCase()))
+                .sorted(Comparator.comparing(Event::getTimestamp).reversed())
+                .limit(10)
                 .toList();
     }
 
