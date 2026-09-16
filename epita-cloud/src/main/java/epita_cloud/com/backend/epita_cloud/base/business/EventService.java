@@ -1,26 +1,31 @@
 package epita_cloud.com.backend.epita_cloud.base.business;
 
+
+import com.fasterxml.jackson.core.JsonProcessingException;
 import epita_cloud.com.backend.epita_cloud.base.business.dto.AddEventReq;
 import epita_cloud.com.backend.epita_cloud.base.business.dto.EventStatsResp;
 import epita_cloud.com.backend.epita_cloud.base.implementation.EventManager;
-import epita_cloud.com.backend.epita_cloud.base.persistence.EventRepository;
 import epita_cloud.com.backend.epita_cloud.entity.Event;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import tools.jackson.databind.ObjectMapper;
 
-import java.time.Instant;
 import java.util.List;
-import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
 public class EventService implements EventUseCase {
 
     private final EventManager eventManager;
+    private final ObjectMapper objectMapper;
 
     @Override
     public Event addEvent(AddEventReq addEventReq) {
-        return eventManager.addEvent(addEventReq);
+        Event event = eventManager.addEvent(addEventReq);
+
+        System.out.println(objectMapper.writeValueAsString(event));
+
+        return event;
     }
 
     @Override
