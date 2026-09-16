@@ -24,3 +24,14 @@ resource "aws_dynamodb_table" "users" {
     type = "S"
   }
 }
+
+resource "aws_dynamodb_table" "rooms" {
+  name         = "rooms"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "room_id"
+
+  attribute {
+    name = "room_id"
+    type = "S"
+  }
+}

@@ -7,6 +7,7 @@ import lombok.*;
 public class Event {
 
     private String eventId;
+    private String roomId;
     private String building;
     private String room;
     private String eventType;
