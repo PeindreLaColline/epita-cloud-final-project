@@ -26,7 +26,7 @@ resource "aws_iam_role_policy" "dynamodb_access" {
       ]
       Resource = [
         aws_dynamodb_table.events.arn,
-        aws_dynamodb_table.users.arn
+        aws_dynamodb_table.rooms.arn
       ]
     }]
   })
