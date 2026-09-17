@@ -17,6 +17,7 @@ jobs:
       TF_DIR: infrastructure
       APP_DIR: epita-cloud
       IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/epita-cloud-backend
+      ASG_NAME: epita-cloud-asg
 
     steps:
       - name: Checkout
@@ -41,30 +42,13 @@ jobs:
         working-directory: ${{ env.TF_DIR }}
         run: |
           terraform init -input=false
-          terraform apply -auto-approve
+          terraform apply -auto-approve -var="docker_image=${{ env.IMAGE_NAME }}:latest"
 
-      - name: Get EC2 IP and SSH key
-        working-directory: ${{ env.TF_DIR }}
-        run: |
-          echo "EC2_IP=$(terraform output -raw public_ip)" >> $GITHUB_ENV
-          {
-            echo "EC2_KEY<<EOF_KEY"
-            terraform output -raw ec2_private_key
-            echo "EOF_KEY"
-          } >> $GITHUB_ENV
-
-      - name: Get Cognito issuer URI
+      - name: Get Cognito issuer URI and ALB DNS name
         working-directory: ${{ env.TF_DIR }}
         run: |
           echo "COGNITO_ISSUER_URI=$(terraform output -raw cognito_issuer_uri)" >> $GITHUB_ENV
-
-      - name: Wait for SSH
-        run: |
-          for i in {1..20}; do
-            nc -z -w5 $EC2_IP 22 && echo "SSH ready" && break
-            echo "waiting for ssh..."
-            sleep 10
-          done
+          echo "ALB_DNS_NAME=$(terraform output -raw alb_dns_name)" >> $GITHUB_ENV
 
       - name: Build and push Docker image
         run: |
@@ -72,21 +56,12 @@ jobs:
           echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
           docker push $IMAGE_NAME:latest
 
-      - name: Deploy to EC2
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ env.EC2_IP }}
-          username: ec2-user
-          key: ${{ env.EC2_KEY }}
-          script: |
-            echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
-            docker pull ${{ env.IMAGE_NAME }}:latest
-            docker stop epita-cloud || true
-            docker rm epita-cloud || true
-            docker run -d \
-              --name epita-cloud \
-              -p 8080:8080 \
-              -e AWS_REGION=${{ env.AWS_REGION }} \
-              -e JWT_SECRET="${{ secrets.JWT_SECRET }}" \
-              -e COGNITO_ISSUER_URI="${{ env.COGNITO_ISSUER_URI }}" \
-              ${{ env.IMAGE_NAME }}:latest
+      - name: Roll out new image (ASG rolling instance refresh)
+        run: |
+          aws autoscaling start-instance-refresh \
+            --auto-scaling-group-name $ASG_NAME \
+            --preferences '{"MinHealthyPercentage":50,"InstanceWarmup":120}'
+
+      - name: Print app URL
+        run: |
+          echo "App is served through the load balancer at: http://$ALB_DNS_NAME"
