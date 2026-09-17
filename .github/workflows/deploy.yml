@@ -53,6 +53,11 @@ jobs:
             echo "EOF_KEY"
           } >> $GITHUB_ENV
 
+      - name: Get Cognito issuer URI
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          echo "COGNITO_ISSUER_URI=$(terraform output -raw cognito_issuer_uri)" >> $GITHUB_ENV
+
       - name: Wait for SSH
         run: |
           for i in {1..20}; do
@@ -83,4 +88,5 @@ jobs:
               -p 8080:8080 \
               -e AWS_REGION=${{ env.AWS_REGION }} \
               -e JWT_SECRET="${{ secrets.JWT_SECRET }}" \
+              -e COGNITO_ISSUER_URI="${{ env.COGNITO_ISSUER_URI }}" \
               ${{ env.IMAGE_NAME }}:latest
