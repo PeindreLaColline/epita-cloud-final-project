@@ -14,17 +14,6 @@ resource "aws_dynamodb_table" "events" {
   }
 }
 
-resource "aws_dynamodb_table" "users" {
-  name         = "users"
-  billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "user_id"
-
-  attribute {
-    name = "user_id"
-    type = "S"
-  }
-}
-
 resource "aws_dynamodb_table" "rooms" {
   name         = "rooms"
   billing_mode = "PAY_PER_REQUEST"
