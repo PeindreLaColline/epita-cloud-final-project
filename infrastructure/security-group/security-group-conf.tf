@@ -12,8 +12,14 @@ variable "egressrules" {
   default = [80, 443]
 }
 
+variable "name" {
+  type        = string
+  description = "Unique security group name. Must not collide with any other SG in the VPC."
+  default     = "security_group_web"
+}
+
 resource "aws_security_group" "sg" {
-  name        = "security_group_web"
+  name        = var.name
   description = "Allow HTTPS, HTTP"
 
   vpc_id = var.vpc_id
