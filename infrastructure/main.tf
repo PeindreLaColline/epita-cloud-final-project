@@ -26,6 +26,7 @@ module "alb-security-group" {
   source       = "./security-group"
   vpc_id       = aws_vpc.vpc.id
   ingressrules = [80]
+  name         = "epita-cloud-alb-sg"
 }
 
 resource "aws_vpc" "vpc" {
