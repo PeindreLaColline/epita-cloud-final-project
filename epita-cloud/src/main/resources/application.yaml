@@ -1,6 +1,11 @@
 spring:
   application:
     name: epita-cloud
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${COGNITO_ISSUER_URI:}
 
 aws:
   dynamodb:
@@ -8,6 +13,3 @@ aws:
     secret-key: ${AWS_SECRET_ACCESS_KEY:}
     endpoint: ${DYNAMODB_ENDPOINT:}
     region: ${AWS_REGION:eu-west-3}
-
-jwt:
-  secret: ${JWT_SECRET:epita-cloud-super-secret-key-change-me-please-32bytes}
