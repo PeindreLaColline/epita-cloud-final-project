@@ -42,7 +42,10 @@ jobs:
         working-directory: ${{ env.TF_DIR }}
         run: |
           terraform init -input=false
-          terraform apply -auto-approve -var="docker_image=${{ env.IMAGE_NAME }}:latest"
+          terraform apply -auto-approve \
+            -var="docker_image=${{ env.IMAGE_NAME }}:latest" \
+            -var="dockerhub_username=${{ secrets.DOCKERHUB_USERNAME }}" \
+            -var="dockerhub_token=${{ secrets.DOCKERHUB_TOKEN }}"
 
       - name: Get Cognito issuer URI and ALB DNS name
         working-directory: ${{ env.TF_DIR }}

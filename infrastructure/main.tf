@@ -128,6 +128,7 @@ resource "aws_launch_template" "app_lt" {
               systemctl enable docker
               systemctl start docker
               usermod -aG docker ec2-user
+              echo "${var.dockerhub_token}" | docker login -u "${var.dockerhub_username}" --password-stdin
               docker pull ${var.docker_image}
               docker run -d \
                 --name epita-cloud \
