@@ -243,7 +243,7 @@
       <div class="conn-fields">
         <div class="field">
           <label for="cfgBaseUrl">API base URL</label>
-          <input id="cfgBaseUrl" type="text" style="min-width:340px">
+          <input id="cfgBaseUrl" type="text" style="min-width:340px" placeholder="same origin (blank) — or http://host for local testing">
         </div>
         <div class="field">
           <label for="cfgClientId">Cognito client ID</label>
@@ -320,7 +320,7 @@
     idToken: null,
     username: null,
     role: null,
-    baseUrl: 'http://epita-cloud-alb-1602865792.eu-west-3.elb.amazonaws.com',
+    baseUrl: '', // same origin: this page is now served by the same backend it calls. Set an absolute http(s) URL here only when opening this file locally.
     clientId: '25hctb94g6q02gv5idrsc70ar0',
     region: 'eu-west-3'
   };
