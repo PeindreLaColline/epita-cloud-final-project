@@ -61,6 +61,35 @@ jobs:
 
       - name: Roll out new image (ASG rolling instance refresh)
         run: |
+          set -e
+          # Only one instance refresh can run on an ASG at a time. If pushes land close
+          # together, a leftover refresh from the previous push blocks this one with
+          # InstanceRefreshInProgress. Cancel it so the newest build always wins, then wait
+          # for it to actually stop before starting the new refresh.
+          STATUS=$(aws autoscaling describe-instance-refreshes \
+            --auto-scaling-group-name $ASG_NAME \
+            --max-records 1 \
+            --query 'InstanceRefreshes[0].Status' \
+            --output text 2>/dev/null || echo "None")
+
+          if [ "$STATUS" = "Pending" ] || [ "$STATUS" = "InProgress" ] || [ "$STATUS" = "Cancelling" ]; then
+            echo "A previous instance refresh is $STATUS - cancelling it so this deploy can proceed."
+            aws autoscaling cancel-instance-refresh --auto-scaling-group-name $ASG_NAME || true
+
+            for i in $(seq 1 30); do
+              STATUS=$(aws autoscaling describe-instance-refreshes \
+                --auto-scaling-group-name $ASG_NAME \
+                --max-records 1 \
+                --query 'InstanceRefreshes[0].Status' \
+                --output text)
+              echo "waiting for previous refresh to stop (status: $STATUS)"
+              case "$STATUS" in
+                Cancelled|Successful|Failed|RollbackSuccessful|RollbackFailed) break ;;
+              esac
+              sleep 10
+            done
+          fi
+
           aws autoscaling start-instance-refresh \
             --auto-scaling-group-name $ASG_NAME \
             --preferences '{"MinHealthyPercentage":50,"InstanceWarmup":120}'
