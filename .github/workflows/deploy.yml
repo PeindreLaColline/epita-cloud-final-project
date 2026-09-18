@@ -62,10 +62,6 @@ jobs:
       - name: Roll out new image (ASG rolling instance refresh)
         run: |
           set -e
-          # Only one instance refresh can run on an ASG at a time. If pushes land close
-          # together, a leftover refresh from the previous push blocks this one with
-          # InstanceRefreshInProgress. Cancel it so the newest build always wins, then wait
-          # for it to actually stop before starting the new refresh.
           STATUS=$(aws autoscaling describe-instance-refreshes \
             --auto-scaling-group-name $ASG_NAME \
             --max-records 1 \
