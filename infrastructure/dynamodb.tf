@@ -12,6 +12,10 @@ resource "aws_dynamodb_table" "events" {
     name = "timestamp"
     type = "S"
   }
+
+  point_in_time_recovery {
+    enabled = true
+  }
 }
 
 resource "aws_dynamodb_table" "rooms" {
@@ -22,5 +26,9 @@ resource "aws_dynamodb_table" "rooms" {
   attribute {
     name = "room_id"
     type = "S"
+  }
+
+  point_in_time_recovery {
+    enabled = true
   }
 }
