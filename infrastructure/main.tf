@@ -123,7 +123,6 @@ resource "aws_launch_template" "app_lt" {
 
   user_data = base64encode(<<-USERDATA
               #!/bin/bash
-              yum update -y
               yum install -y docker
               systemctl enable docker
               systemctl start docker
@@ -206,13 +205,11 @@ resource "aws_autoscaling_group" "app_asg" {
     version = "$Latest"
   }
 
-  instance_refresh {
-    strategy = "Rolling"
-    preferences {
-      min_healthy_percentage = 50
-      instance_warmup        = 90
-    }
-  }
+  # No `instance_refresh` block here on purpose: it would auto-trigger a rollout
+  # whenever a .tf change touches the launch template, which can collide with
+  # the explicit `aws autoscaling start-instance-refresh` call in deploy.yml
+  # (only one refresh can run on an ASG at a time). That CI step is the single,
+  # deliberate place a rollout is triggered, on every deploy, infra-change or not.
 
   tag {
     key                 = "Name"

@@ -35,6 +35,12 @@ jobs:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Build and push Docker image
+        run: |
+          docker build -t $IMAGE_NAME:latest ./$APP_DIR
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+          docker push $IMAGE_NAME:latest
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
@@ -52,12 +58,6 @@ jobs:
         run: |
           echo "COGNITO_ISSUER_URI=$(terraform output -raw cognito_issuer_uri)" >> $GITHUB_ENV
           echo "ALB_DNS_NAME=$(terraform output -raw alb_dns_name)" >> $GITHUB_ENV
-
-      - name: Build and push Docker image
-        run: |
-          docker build -t $IMAGE_NAME:latest ./$APP_DIR
-          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
-          docker push $IMAGE_NAME:latest
 
       - name: Roll out new image (ASG rolling instance refresh)
         run: |
