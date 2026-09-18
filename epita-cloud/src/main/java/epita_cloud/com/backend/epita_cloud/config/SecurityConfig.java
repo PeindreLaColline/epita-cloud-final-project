@@ -53,11 +53,6 @@ public class SecurityConfig {
         return http.build();
     }
 
-    /**
-     * Allows the browser-based dashboard (served from a different origin, e.g. an Artifact
-     * preview) to call this API with a Bearer token. GET-only client, so the allowed method
-     * list stays narrow; no cookies are used so allowCredentials stays false.
-     */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
