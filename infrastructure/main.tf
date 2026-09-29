@@ -2,21 +2,6 @@ provider "aws" {
   region = "eu-west-3"
 }
 
-variable "ec2_name" {
-  type    = string
-  default = "backend-server"
-}
-
-data "aws_ami" "amazon_linux_2" {
-  most_recent = true
-  owners      = ["amazon"]
-
-  filter {
-    name   = "name"
-    values = ["amzn2-ami-hvm-*-x86_64-gp2"]
-  }
-}
-
 data "aws_availability_zones" "available" {
   state = "available"
 }
@@ -40,7 +25,7 @@ resource "aws_internet_gateway" "igw" {
   vpc_id = aws_vpc.vpc.id
 }
 
-# Two public subnets in two different AZs so the ASG/ALB can spread across them
+# Two public subnets in two different AZs so the ALB/ECS tasks can spread across them
 resource "aws_subnet" "public_subnet" {
   vpc_id                  = aws_vpc.vpc.id
   cidr_block              = "10.0.1.0/24"
@@ -74,10 +59,11 @@ resource "aws_route_table_association" "public_rta_2" {
   route_table_id = aws_route_table.public_rt.id
 }
 
-# Instance security group: only the ALB can reach the app port; SSH stays open for debugging
-resource "aws_security_group" "instance_sg" {
-  name        = "epita-cloud-instance-sg"
-  description = "Allow app traffic from the ALB only, plus SSH for debugging"
+# Task security group: only the ALB can reach the app port. No SSH rule here -
+# there's no instance to SSH into anymore; container logs go to CloudWatch Logs.
+resource "aws_security_group" "ecs_task_sg" {
+  name        = "epita-cloud-task-sg"
+  description = "Allow app traffic from the ALB only"
   vpc_id      = aws_vpc.vpc.id
 
   ingress {
@@ -88,66 +74,11 @@ resource "aws_security_group" "instance_sg" {
     security_groups = [module.alb-security-group.sg_output]
   }
 
-  ingress {
-    description = "SSH for debugging"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
   egress {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
-  }
-}
-
-# Instances are self-sufficient at boot: install docker, pull the latest image, run it.
-# A new deploy is rolled out with an ASG instance refresh (see deploy.yml), not SSH.
-resource "aws_launch_template" "app_lt" {
-  name_prefix   = "epita-cloud-lt-"
-  image_id      = data.aws_ami.amazon_linux_2.id
-  instance_type = "t3.micro"
-  key_name      = aws_key_pair.deployer.key_name
-
-  iam_instance_profile {
-    name = aws_iam_instance_profile.ec2_profile.name
-  }
-
-  network_interfaces {
-    associate_public_ip_address = true
-    security_groups             = [aws_security_group.instance_sg.id]
-  }
-
-  user_data = base64encode(<<-USERDATA
-              #!/bin/bash
-              yum install -y docker
-              systemctl enable docker
-              systemctl start docker
-              usermod -aG docker ec2-user
-              echo "${var.dockerhub_token}" | docker login -u "${var.dockerhub_username}" --password-stdin
-              docker pull ${var.docker_image}
-              docker run -d \
-                --name epita-cloud \
-                --restart unless-stopped \
-                -p 8080:8080 \
-                -e AWS_REGION=eu-west-3 \
-                -e COGNITO_ISSUER_URI="https://cognito-idp.eu-west-3.amazonaws.com/${aws_cognito_user_pool.main.id}" \
-                ${var.docker_image}
-              USERDATA
-  )
-
-  tag_specifications {
-    resource_type = "instance"
-    tags = {
-      Name = var.ec2_name
-    }
-  }
-
-  lifecycle {
-    create_before_destroy = true
   }
 }
 
@@ -164,7 +95,7 @@ resource "aws_lb_target_group" "app_tg" {
   port        = 8080
   protocol    = "HTTP"
   vpc_id      = aws_vpc.vpc.id
-  target_type = "instance"
+  target_type = "ip" # ECS/Fargate tasks register by IP, not instance ID
 
   health_check {
     path                = "/health"
@@ -187,45 +118,126 @@ resource "aws_lb_listener" "app_listener" {
   }
 }
 
-# Scalability + high availability: 2 instances minimum, spread across 2 AZs,
-# behind the ALB, able to grow to 3 under load.
-resource "aws_autoscaling_group" "app_asg" {
-  name                = "epita-cloud-asg"
-  min_size            = 2
-  max_size            = 3
-  desired_capacity    = 2
-  vpc_zone_identifier = [aws_subnet.public_subnet.id, aws_subnet.public_subnet_2.id]
-  target_group_arns   = [aws_lb_target_group.app_tg.arn]
-
-  health_check_type         = "ELB"
-  health_check_grace_period = 90
-
-  launch_template {
-    id      = aws_launch_template.app_lt.id
-    version = "$Latest"
-  }
-
-  # No `instance_refresh` block here on purpose: it would auto-trigger a rollout
-  # whenever a .tf change touches the launch template, which can collide with
-  # the explicit `aws autoscaling start-instance-refresh` call in deploy.yml
-  # (only one refresh can run on an ASG at a time). That CI step is the single,
-  # deliberate place a rollout is triggered, on every deploy, infra-change or not.
-
-  tag {
-    key                 = "Name"
-    value               = var.ec2_name
-    propagate_at_launch = true
-  }
+# Docker Hub is a private repo, so ECS needs credentials to pull the image.
+# Kept in Secrets Manager and referenced from the task definition, instead of
+# being embedded in plaintext in a user_data script like the EC2 setup did.
+resource "aws_secretsmanager_secret" "dockerhub_credentials" {
+  name = "epita-cloud-dockerhub-credentials"
 }
 
-resource "aws_autoscaling_policy" "cpu_scaling" {
-  name                   = "epita-cloud-cpu-target-tracking"
-  autoscaling_group_name = aws_autoscaling_group.app_asg.name
-  policy_type             = "TargetTrackingScaling"
+resource "aws_secretsmanager_secret_version" "dockerhub_credentials" {
+  secret_id = aws_secretsmanager_secret.dockerhub_credentials.id
+  secret_string = jsonencode({
+    username = var.dockerhub_username
+    password = var.dockerhub_token
+  })
+}
 
-  target_tracking_configuration {
+resource "aws_cloudwatch_log_group" "app" {
+  name              = "/ecs/epita-cloud"
+  retention_in_days = 14
+}
+
+resource "aws_ecs_cluster" "main" {
+  name = "epita-cloud-cluster"
+}
+
+resource "aws_ecs_task_definition" "app" {
+  family                   = "epita-cloud"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = "512"
+  memory                   = "1024"
+  execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
+  task_role_arn            = aws_iam_role.ecs_task_role.arn
+
+  container_definitions = jsonencode([
+    {
+      name      = "epita-cloud"
+      image     = var.docker_image
+      essential = true
+
+      repositoryCredentials = {
+        credentialsParameter = aws_secretsmanager_secret.dockerhub_credentials.arn
+      }
+
+      portMappings = [
+        {
+          containerPort = 8080
+          protocol      = "tcp"
+        }
+      ]
+
+      environment = [
+        { name = "AWS_REGION", value = "eu-west-3" },
+        { name = "COGNITO_ISSUER_URI", value = "https://cognito-idp.eu-west-3.amazonaws.com/${aws_cognito_user_pool.main.id}" }
+      ]
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.app.name
+          "awslogs-region"        = "eu-west-3"
+          "awslogs-stream-prefix" = "app"
+        }
+      }
+    }
+  ])
+}
+
+# Scalability + high availability: 2 tasks minimum, spread across 2 AZs
+# (Fargate schedules across the subnets below), behind the ALB, able to grow
+# to 3 under load - the direct replacement for the old ASG min2/max3 policy.
+#
+# Terraform won't register a new task definition revision just because the
+# image tag string (always ":latest") didn't change, so deploy.yml explicitly
+# calls `aws ecs update-service --force-new-deployment` on every deploy - the
+# same role the `aws autoscaling start-instance-refresh` call used to play.
+resource "aws_ecs_service" "app" {
+  name            = "epita-cloud-service"
+  cluster         = aws_ecs_cluster.main.id
+  task_definition = aws_ecs_task_definition.app.arn
+  desired_count   = 2
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets          = [aws_subnet.public_subnet.id, aws_subnet.public_subnet_2.id]
+    security_groups  = [aws_security_group.ecs_task_sg.id]
+    assign_public_ip = true
+  }
+
+  load_balancer {
+    target_group_arn = aws_lb_target_group.app_tg.arn
+    container_name    = "epita-cloud"
+    container_port    = 8080
+  }
+
+  health_check_grace_period_seconds = 90
+
+  deployment_minimum_healthy_percent = 50
+  deployment_maximum_percent         = 200
+
+  depends_on = [aws_lb_listener.app_listener]
+}
+
+resource "aws_appautoscaling_target" "app_scaling" {
+  max_capacity       = 3
+  min_capacity       = 2
+  resource_id        = "service/${aws_ecs_cluster.main.name}/${aws_ecs_service.app.name}"
+  scalable_dimension = "ecs:service:DesiredCount"
+  service_namespace  = "ecs"
+}
+
+resource "aws_appautoscaling_policy" "cpu_scaling" {
+  name               = "epita-cloud-cpu-target-tracking"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.app_scaling.resource_id
+  scalable_dimension = aws_appautoscaling_target.app_scaling.scalable_dimension
+  service_namespace  = aws_appautoscaling_target.app_scaling.service_namespace
+
+  target_tracking_scaling_policy_configuration {
     predefined_metric_specification {
-      predefined_metric_type = "ASGAverageCPUUtilization"
+      predefined_metric_type = "ECSServiceAverageCPUUtilization"
     }
     target_value = 60
   }
