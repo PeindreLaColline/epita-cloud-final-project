@@ -17,7 +17,8 @@ jobs:
       TF_DIR: infrastructure
       APP_DIR: epita-cloud
       IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/epita-cloud-backend
-      ASG_NAME: epita-cloud-asg
+      CLUSTER_NAME: epita-cloud-cluster
+      SERVICE_NAME: epita-cloud-service
 
     steps:
       - name: Checkout
@@ -59,36 +60,18 @@ jobs:
           echo "COGNITO_ISSUER_URI=$(terraform output -raw cognito_issuer_uri)" >> $GITHUB_ENV
           echo "ALB_DNS_NAME=$(terraform output -raw alb_dns_name)" >> $GITHUB_ENV
 
-      - name: Roll out new image (ASG rolling instance refresh)
+      - name: Roll out new image (ECS force new deployment)
         run: |
           set -e
-          STATUS=$(aws autoscaling describe-instance-refreshes \
-            --auto-scaling-group-name $ASG_NAME \
-            --max-records 1 \
-            --query 'InstanceRefreshes[0].Status' \
-            --output text 2>/dev/null || echo "None")
+          aws ecs update-service \
+            --cluster $CLUSTER_NAME \
+            --service $SERVICE_NAME \
+            --force-new-deployment > /dev/null
 
-          if [ "$STATUS" = "Pending" ] || [ "$STATUS" = "InProgress" ] || [ "$STATUS" = "Cancelling" ]; then
-            echo "A previous instance refresh is $STATUS - cancelling it so this deploy can proceed."
-            aws autoscaling cancel-instance-refresh --auto-scaling-group-name $ASG_NAME || true
-
-            for i in $(seq 1 30); do
-              STATUS=$(aws autoscaling describe-instance-refreshes \
-                --auto-scaling-group-name $ASG_NAME \
-                --max-records 1 \
-                --query 'InstanceRefreshes[0].Status' \
-                --output text)
-              echo "waiting for previous refresh to stop (status: $STATUS)"
-              case "$STATUS" in
-                Cancelled|Successful|Failed|RollbackSuccessful|RollbackFailed) break ;;
-              esac
-              sleep 10
-            done
-          fi
-
-          aws autoscaling start-instance-refresh \
-            --auto-scaling-group-name $ASG_NAME \
-            --preferences '{"MinHealthyPercentage":50,"InstanceWarmup":120}'
+          echo "Waiting for the new deployment to become stable..."
+          aws ecs wait services-stable \
+            --cluster $CLUSTER_NAME \
+            --service $SERVICE_NAME
 
       - name: Print app URL
         run: |
