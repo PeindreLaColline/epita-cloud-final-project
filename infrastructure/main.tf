@@ -91,7 +91,12 @@ resource "aws_lb" "app_alb" {
 }
 
 resource "aws_lb_target_group" "app_tg" {
-  name        = "epita-cloud-tg"
+  # name_prefix (max 6 chars for target groups), not a fixed name: paired with
+  # create_before_destroy below so a forced replacement (e.g. target_type
+  # instance -> ip) creates the new target group and repoints the listener
+  # before the old target group is destroyed, instead of trying to delete a
+  # target group that's still attached to a listener.
+  name_prefix = "epcld-"
   port        = 8080
   protocol    = "HTTP"
   vpc_id      = aws_vpc.vpc.id
@@ -104,6 +109,10 @@ resource "aws_lb_target_group" "app_tg" {
     interval            = 30
     timeout             = 5
     matcher             = "200"
+  }
+
+  lifecycle {
+    create_before_destroy = true
   }
 }
 
